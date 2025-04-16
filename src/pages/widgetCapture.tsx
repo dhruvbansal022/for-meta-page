@@ -70,6 +70,11 @@ const WidgetDemo = forwardRef<WidgetRefMethods, WidgetCaptureProps>(({ urn }, re
       widgetInstance.current = null;
       setIsWidgetLoaded(false);
     }
+    
+    // Clear the container contents instead of trying to remove individual elements
+    if (containerRef.current) {
+      containerRef.current.innerHTML = '';
+    }
   };
 
   useEffect(() => {
@@ -91,9 +96,16 @@ const WidgetDemo = forwardRef<WidgetRefMethods, WidgetCaptureProps>(({ urn }, re
         }
       }, 200);
 
-      setTimeout(() => clearInterval(checkInterval), 10000);
+      // Clear interval after 10 seconds to prevent memory leaks
+      const timeoutId = setTimeout(() => {
+        clearInterval(checkInterval);
+        console.warn("Failed to initialize widget after timeout");
+      }, 10000);
 
-      return () => clearInterval(checkInterval);
+      return () => {
+        clearInterval(checkInterval);
+        clearTimeout(timeoutId);
+      };
     }
   };
 
@@ -103,20 +115,26 @@ const WidgetDemo = forwardRef<WidgetRefMethods, WidgetCaptureProps>(({ urn }, re
   }, [containerKey]);
 
   const initializeWidget = (): void => {
-    if (!containerRef.current || widgetInstance.current) return;
-
+    if (!containerRef.current) return;
+    
     try {
+      // Clean up the container first to avoid potential DOM conflicts
+      containerRef.current.innerHTML = "";
+      
+      // Create a new container for the widget
       const widgetContainer = document.createElement("div");
       widgetContainer.id = `diro-widget-inner-${containerKey}`;
-
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-        containerRef.current.appendChild(widgetContainer);
-      }
+      containerRef.current.appendChild(widgetContainer);
 
       const targetUrl = urn
         ? `https://verification.diro.io/?buttonid=O.c117bd44-8cfa-42df-99df-c4ad2ba6c6f5-Z6Jc&trackid=${urn}`
         : "https://verification.diro.io/?buttonid=O.c117bd44-8cfa-42df-99df-c4ad2ba6c6f5-Z6Jc&trackid=";
+
+      // Make sure the widget initializer function exists
+      if (typeof (window as any).initializeDiroWidget !== "function") {
+        console.error("initializeDiroWidget is not available");
+        return;
+      }
 
       (window as any).initializeDiroWidget(widgetContainer, {
         targetUrl: targetUrl,
@@ -135,12 +153,12 @@ const WidgetDemo = forwardRef<WidgetRefMethods, WidgetCaptureProps>(({ urn }, re
         },
       });
 
-      // Create a minimal instance since the function doesn't return one
+      // Create a simplified widget instance with safer destroy method
       widgetInstance.current = {
         update: () => {},
         destroy: () => {
-          if (widgetContainer.parentNode) {
-            widgetContainer.parentNode.removeChild(widgetContainer);
+          if (containerRef.current) {
+            containerRef.current.innerHTML = "";
           }
         },
       };
@@ -149,6 +167,7 @@ const WidgetDemo = forwardRef<WidgetRefMethods, WidgetCaptureProps>(({ urn }, re
     } catch (error) {
       console.error("Error initializing Diro widget:", error);
       hasInitialized.current = false;
+      setIsWidgetLoaded(false);
     }
   };
 
